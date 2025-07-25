@@ -1,0 +1,518 @@
+{
+  "name": "A.I.M.O.",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "aimo-input",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, GET, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "efdb8b5e-4124-4c5f-acbf-8746b78a3b6d",
+      "name": "AIMO Input Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1840,
+        -1784
+      ],
+      "webhookId": "0371505a-f269-4862-ab48-634f123c03b0"
+    },
+    {
+      "parameters": {
+        "jsCode": "// זיהוי סוג הקלט וטיפול ב-session\nconst input = $input.first();\nconst body = input.json;\nconst binary = input.binary;\n\n// יצירת session ID\nconst sessionId = body?.session_id || 'session_' + Date.now();\n\n// זיהוי סוג הקלט\nlet inputType = 'unknown';\nlet inputContent = '';\n\nif (body?.text) {\n  // קלט טקסט\n  inputType = 'text';\n  inputContent = body.text;\n} else if (binary?.data) {\n  // קלט אודיו\n  inputType = 'audio';\n} \n\nconsole.log(`Input type: ${inputType}`);\nconsole.log(`Session: ${sessionId}`);\n\nreturn [{\n  json: {\n    inputType,\n    inputContent,\n    sessionId,\n    timestamp: new Date().toISOString()\n  },\n  binary: binary\n}];"
+      },
+      "id": "d31c8a4b-24d2-490e-85db-9fa9336c8aa5",
+      "name": "Process Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1648,
+        -2016
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.inputType }}",
+              "rightValue": "audio",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "id": "b3da28a8-896d-41cf-99e2-9245dd9f2394"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "70fc33ce-39b4-4605-b493-1a7bce54fa0c",
+      "name": "Is Audio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1504,
+        -1776
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "whisper-1"
+            },
+            {
+              "name": "response_format",
+              "value": "json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "1ecdba33-a2e5-4ef6-b31f-97eef78cd2ea",
+      "name": "Whisper STT",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1312,
+        -2000
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "0vzvK9daUvscWSUn",
+          "name": "myOpenAICredential"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// איחוד הטקסט מאודיו או טקסט ישיר\nlet userMessage = '';\nconst sessionId = $node['Process Input'].json.sessionId;\n\nif ($node['Process Input'].json.inputType === 'text') {\n  // טקסט ישיר\n  userMessage = $node['Process Input'].json.inputContent;\n} else {\n  // טקסט מתומלל מאודיו\n  userMessage = $json.text;\n}\n\nconsole.log(`User message: ${userMessage}`);\n\nreturn [{\n  json: {\n    userMessage,\n    sessionId,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "3afed6ca-48b3-40dd-a831-18ee7864a728",
+      "name": "Merge Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1024,
+        -1824
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:3001/api/aimo/memory/{{ $json.sessionId }}",
+        "options": {
+          "timeout": 3000
+        }
+      },
+      "id": "c930c017-6f3d-49aa-80c1-62cfde556fd9",
+      "name": "Get Memory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -880,
+        -2016
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// בניית קונטקסט עם או בלי זיכרון\nconst { userMessage, sessionId } = $node['Merge Text'].json;\nlet memoryData = null;\n\n// בדוק אם יש זיכרון זמין\ntry {\n  memoryData = $node['Get Memory'].json.memory;\n} catch (error) {\n  console.log('No memory available, continuing without it');\n}\n\n// זיהוי שפה\nfunction detectLanguage(text) {\n  if (/[\\u0590-\\u05FF]/.test(text)) return 'עברית';\n  if (/[\\u0600-\\u06FF]/.test(text)) return 'ערבית';\n  if (/[\\u4E00-\\u9FFF]/.test(text)) return 'סינית';\n  if (/[\\u3040-\\u309F\\u30A0-\\u30FF]/.test(text)) return 'יפנית';\n  return 'אנגלית';\n}\n\nconst detectedLanguage = detectLanguage(userMessage);\n\n// בניית ההקשר\nlet context = {\n  role: \"system\",\n  content: `You are AIMO, an advanced AI assistant.\nRespond naturally in ${detectedLanguage}.\nBe helpful, accurate, and conversational.`\n};\n\n// הוסף היסטוריה אם יש\nlet messages = [context];\n\nif (memoryData?.recent_conversations?.length > 0) {\n  memoryData.recent_conversations.slice(-3).forEach(conv => {\n    messages.push(\n      { role: \"user\", content: conv.user_message },\n      { role: \"assistant\", content: conv.aimo_response }\n    );\n  });\n}\n\n// הוסף את ההודעה הנוכחית\nmessages.push({ role: \"user\", content: userMessage });\n\nreturn [{\n  json: {\n    messages,\n    userMessage,\n    sessionId,\n    detectedLanguage\n  }\n}];"
+      },
+      "id": "e277cde5-483b-4db5-968d-19e49bb7dfa3",
+      "name": "Build Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        -2064
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o\",\n  \"messages\": {{ JSON.stringify($json.messages) }},\n  \"temperature\": 0.8,\n  \"max_tokens\": 2000\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "82c3979c-2739-450b-b894-c85b1f539341",
+      "name": "GPT-4o",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -320,
+        -1632
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "0vzvK9daUvscWSUn",
+          "name": "myOpenAICredential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// הכנת התשובה הסופית\nconst gptResponse = $node['GPT-4o'].json.choices[0].message.content;\nconst userMessage = $node['Build Context'].json.userMessage;\nconst sessionId = $node['Build Context'].json.sessionId;\nconst detectedLanguage = $node['Build Context'].json.detectedLanguage;\n\n// זיהוי שפה לדיבור\nfunction getVoiceConfig(text) {\n  if (/[\\u0590-\\u05FF]/.test(text)) {\n    return { code: 'he-IL', voice: 'he-IL-Wavenet-D' };\n  }\n  return { code: 'en-US', voice: 'en-US-Wavenet-D' };\n}\n\nconst voiceConfig = getVoiceConfig(gptResponse);\n\nreturn [{\n  json: {\n    success: true,\n    text: gptResponse,\n    originalText: userMessage,\n    sessionId,\n    detectedLanguage,\n    voiceConfig,\n    timestamp: new Date().toISOString(),\n    needsAudio: true\n  }\n}];"
+      },
+      "id": "bd32db5a-f1ad-457a-8a66-2bd0be8a0722",
+      "name": "Prepare Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        -1648
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://texttospeech.googleapis.com/v1/text:synthesize",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"input\": { \"text\": \"{{ $json.text }}\" },\n  \"voice\": { \n    \"languageCode\": \"{{ $json.voiceConfig.code }}\",\n    \"name\": \"{{ $json.voiceConfig.voice }}\"\n  },\n  \"audioConfig\": { \"audioEncoding\": \"MP3\" }\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "d262ca3f-9241-445f-b72a-bfcf218da5f6",
+      "name": "Google TTS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        288,
+        -2048
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "q7INRvS18Kv8Ao2J",
+          "name": "Google account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// הרכבת התשובה הסופית\nconst response = $node['Prepare Response'].json;\nlet audioBase64 = '';\n\ntry {\n  audioBase64 = $json.audioContent || '';\n} catch (error) {\n  console.log('TTS failed, sending text only');\n}\n\nreturn [{\n  json: {\n    success: true,\n    text: response.text,\n    originalText: response.originalText,\n    audioBase64,\n    sessionId: response.sessionId,\n    detectedLanguage: response.detectedLanguage,\n    timestamp: response.timestamp\n  }\n}];"
+      },
+      "id": "32d2dbdc-5982-4de6-b4a6-6feb16c307b0",
+      "name": "Final Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -1648
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "67705a4e-f748-4745-ac23-0a377d01c5ea",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        576,
+        -1888
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// טיפול בשגיאת תמלול\nconsole.error('Whisper error:', $json.error);\n\nreturn [{\n  json: {\n    error: 'Speech recognition failed',\n    userMessage: 'Error processing audio',\n    sessionId: $node['Process Input'].json.sessionId\n  }\n}];"
+      },
+      "id": "cab2f9c2-a9a3-4852-9b6d-0c424daa6eab",
+      "name": "Handle Whisper Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1168,
+        -1632
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// טיפול בשגיאת זיכרון\nconsole.log('Memory API unavailable');\n\nreturn [{\n  json: {\n    memory: {\n      recent_conversations: [],\n      user_profile: [],\n      knowledge_base: []\n    },\n    sessionId: $json.sessionId\n  }\n}];"
+      },
+      "id": "b1eeab09-0a57-4f49-b221-72e5e31a158e",
+      "name": "Handle Memory Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        -1568
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/conversation/save",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"user_message\": \"{{ $('Build Context').item.json.userMessage }}\",\n  \"aimo_response\": \"{{ $json.choices[0].message.content }}\",\n  \"session_id\": \"{{ $('Build Context').item.json.sessionId }}\"\n}",
+        "options": {
+          "timeout": 3000
+        }
+      },
+      "id": "9f2f4123-2c9a-4a19-be22-6ee906843b96",
+      "name": "Save Conversation1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -224,
+        -2048
+      ],
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "AIMO Input Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Input": {
+      "main": [
+        [
+          {
+            "node": "Is Audio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Audio?": {
+      "main": [
+        [
+          {
+            "node": "Whisper STT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper STT": {
+      "main": [
+        [
+          {
+            "node": "Merge Text",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Handle Whisper Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Whisper Error": {
+      "main": [
+        [
+          {
+            "node": "Merge Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Text": {
+      "main": [
+        [
+          {
+            "node": "Get Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Memory": {
+      "main": [
+        [
+          {
+            "node": "Build Context",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Handle Memory Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Memory Error": {
+      "main": [
+        [
+          {
+            "node": "Build Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Context": {
+      "main": [
+        [
+          {
+            "node": "GPT-4o",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT-4o": {
+      "main": [
+        [
+          {
+            "node": "Save Conversation1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Response": {
+      "main": [
+        [
+          {
+            "node": "Google TTS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google TTS": {
+      "main": [
+        [
+          {
+            "node": "Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Conversation1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "9c396f17-96a0-4f7d-9eb0-6031e6975ac0",
+  "meta": {
+    "instanceId": "2c3e36f57d4488ab50423764b1d76b6643496ac02d20b7e49ac8846fcf2d9197"
+  },
+  "id": "SoMqsdYumFftjHcR",
+  "tags": []
+}
