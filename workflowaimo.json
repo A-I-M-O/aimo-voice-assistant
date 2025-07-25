@@ -1,0 +1,432 @@
+{
+  "name": "A.I.M.O. - Fixed Final",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "voice-input",
+        "responseMode": "responseNode",
+        "options": {
+          "binaryPropertyName": "data",
+          "rawBody": false,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "2c3e36f57d4488ab50423764b1d76b6643496ac02d20b7e49ac8846fcf2d9197"
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "new-version-id",
+  "id": "SoMqsdYumFftjHcR",
+  "tags": []
+},
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, GET, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "name": "Webhook - קלט קול",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-1600, -816],
+      "id": "32862ac3-68d0-4c94-985b-b39d50480699",
+      "webhookId": "d401c699-6f17-4eea-a6cf-38f3a30bd1e8"
+    },
+    {
+      "parameters": {
+        "jsCode": "// יצירת או קבלת session ID קבוע\nconst inputData = $input.first();\n\n// נסה לקבל session_id מהבקשה\nlet sessionId = inputData.json?.session_id || \"user_main_session\";\n\n// אם אין session_id, צור חדש\nif (!sessionId) {\n  sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);\n}\n\n// החזר את כל הנתונים עם session_id מתוקן\nreturn [{\n  json: {\n    session_id: sessionId,\n    timestamp: new Date().toISOString()\n  },\n  binary: inputData.binary // שמור את האודיו\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1376, -816],
+      "id": "1461c90f-fc4b-4433-9b02-a5ea3e4d951b",
+      "name": "Fix Session ID"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "whisper-1"
+            },
+            {
+              "name": "response_format",
+              "value": "json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Whisper - Speech to Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1152, -816],
+      "id": "6fc067d6-78c4-48da-ae1d-cc27f071bfa9",
+      "credentials": {
+        "openAiApi": {
+          "id": "0vzvK9daUvscWSUn",
+          "name": "myOpenAICredential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3001/api/aimo/memory/user_main_session",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-928, -816],
+      "id": "3020ec53-6086-4780-9121-3156ea4d71dc",
+      "name": "Get Session Memory",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// קבלת נתונים מהצמתים הקודמים\nconst whisperData = $node['Whisper - Speech to Text'].json;\nconst memoryData = $node['Get Session Memory'].json;\nconst sessionData = $node['Fix Session ID'].json;\n\n// בדיקה שהנתונים קיימים\nif (!whisperData || !whisperData.text) {\n  return [{\n    json: {\n      text: \"Hello! How can I help you?\",\n      session_id: sessionData.session_id,\n      original_user_message: \"\",\n      user_message: \"\"\n    }\n  }];\n}\n\n// הטקסט שהמשתמש אמר עכשיו\nconst currentUserMessage = whisperData.text;\n\n// פונקציה מתקדמת לזיהוי שפה\nfunction detectUserLanguage(text) {\n  // נקה רווחים ועיצוב\n  const cleanText = text.toLowerCase().trim();\n  \n  const patterns = [\n    { lang: 'hebrew', pattern: /[\\u0590-\\u05FF]/, instruction: 'ענה בעברית באופן טבעי וידידותי' },\n    { lang: 'arabic', pattern: /[\\u0600-\\u06FF]/, instruction: 'أجب باللغة العربية بطريقة طبيعية وودية' },\n    { lang: 'japanese', pattern: /[\\u3040-\\u309F\\u30A0-\\u30FF\\u4E00-\\u9FAF]/, instruction: 'Respond in Japanese naturally and friendly' },\n    { lang: 'chinese', pattern: /[\\u4E00-\\u9FFF\\u3400-\\u4DBF]/, instruction: 'Respond in Chinese naturally and friendly' },\n    { lang: 'korean', pattern: /[\\uAC00-\\uD7AF\\u1100-\\u11FF]/, instruction: 'Respond in Korean naturally and friendly' },\n    { lang: 'thai', pattern: /[\\u0E00-\\u0E7F]/, instruction: 'Respond in Thai naturally and friendly' },\n    { lang: 'hindi', pattern: /[\\u0900-\\u097F]/, instruction: 'Respond in Hindi naturally and friendly' },\n    { lang: 'greek', pattern: /[\\u0370-\\u03FF\\u1F00-\\u1FFF]/, instruction: 'Respond in Greek naturally and friendly' },\n    { lang: 'russian', pattern: /[\\u0400-\\u04FF]/, instruction: 'Отвечай по-русски естественно и дружелюбно' },\n    // זיהוי שפות לטיניות לפי מילים נפוצות ותווים\n    { \n      lang: 'spanish', \n      pattern: /(ñ|á|é|í|ó|ú|ü|¿|¡)|(\\b(hola|gracias|por favor|buenos|días|noches|cómo|qué|dónde|cuándo|sí|no|muy|bien|mal|bueno|casa|agua|tiempo|año|día|hacer|tener|estar|poder|decir|todo|año|vez|forma|hasta|tanto)\\b)/i, \n      instruction: 'Responde en español de forma natural y amigable' \n    },\n    { \n      lang: 'portuguese', \n      pattern: /(ã|õ|ç|á|é|í|ó|ú|â|ê|ô)|(\\b(olá|obrigado|obrigada|por favor|bom dia|boa noite|como|onde|quando|sim|não|muito|bem|casa|água|tempo|ano|dia|fazer|ter|estar|poder|dizer|todo|vez|até|tanto)\\b)/i, \n      instruction: 'Responda em português de forma natural e amigável' \n    },\n    { \n      lang: 'french', \n      pattern: /(à|â|ä|ç|è|é|ê|ë|î|ï|ô|ù|û|ü|ÿ)|(\\b(bonjour|merci|s'il vous plaît|bonne nuit|comment|où|quand|oui|non|très|bien|maison|eau|temps|année|jour|faire|avoir|être|pouvoir|dire|tout|fois|jusqu'à)\\b)/i, \n      instruction: 'Répondez en français de manière naturelle et amicale' \n    },\n    { \n      lang: 'german', \n      pattern: /(ä|ö|ü|ß)|(\\b(hallo|danke|bitte|guten tag|gute nacht|wie|wo|wann|ja|nein|sehr|gut|haus|wasser|zeit|jahr|tag|machen|haben|sein|können|sagen|alle|mal|bis)\\b)/i, \n      instruction: 'Antworte auf Deutsch natürlich und freundlich' \n    },\n    { \n      lang: 'italian', \n      pattern: /(à|è|é|ì|ò|ó|ù)|(\\b(ciao|grazie|prego|buongiorno|buonanotte|come|dove|quando|sì|no|molto|bene|casa|acqua|tempo|anno|giorno|fare|avere|essere|potere|dire|tutto|volta|fino)\\b)/i, \n      instruction: 'Rispondi in italiano in modo naturale e amichevole' \n    }\n  ];\n  \n  // בדיקה לפי סדר עדיפות\n  for (const { pattern, instruction } of patterns) {\n    if (pattern.test(cleanText)) {\n      return instruction;\n    }\n  }\n  \n  // ברירת מחדל לאנגלית\n  return 'Respond in English naturally and friendly';\n}\n\n// בניית קונטקסט עם זיכרון\nlet contextMessage = \"You are AIMO, a multilingual AI assistant. \";\n\n// אם יש זיכרון קודם\nif (memoryData && memoryData.success !== false && memoryData.recent_conversations) {\n  contextMessage += \"\\n\\nPrevious conversations:\\n\";\n  \n  // הוסף את 5 השיחות האחרונות\n  memoryData.recent_conversations.slice(-5).forEach(conv => {\n    contextMessage += `User: ${conv.user_message}\\nAIMO: ${conv.aimo_response}\\n\\n`;\n  });\n}\n\n// אם יש מידע אישי על המשתמש\nif (memoryData && memoryData.user_info && Object.keys(memoryData.user_info).length > 0) {\n  contextMessage += \"What I know about you:\\n\";\n  Object.entries(memoryData.user_info).forEach(([key, value]) => {\n    contextMessage += `${key}: ${value}\\n`;\n  });\n  contextMessage += \"\\n\";\n}\n\n// השאלה הנוכחית עם הוראת שפה\ncontextMessage += `Current user message: ${currentUserMessage}\\n\\n`;\ncontextMessage += detectUserLanguage(currentUserMessage);\n\n// החזר את ההודעה המוכנה ל-GPT\nreturn [{\n  json: {\n    text: contextMessage,\n    session_id: sessionData.session_id,\n    original_user_message: currentUserMessage,\n    user_message: currentUserMessage\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-704, -816],
+      "id": "01173170-45f6-48b8-b39a-9481babfa0d7",
+      "name": "Build Context with Memory",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "gpt-4o"
+            },
+            {
+              "name": "messages",
+              "value": "={{ [\n  {\n    \"role\": \"system\",\n    \"content\": \"You are A.I.M.O., a helpful AI assistant. Respond naturally in the same language the user speaks. Keep responses conversational and helpful.\"\n  },\n  {\n    \"role\": \"user\",\n    \"content\": $json.text\n  }\n] }}"
+            },
+            {
+              "name": "max_tokens",
+              "value": "={{ 2000 }}"
+            },
+            {
+              "name": "temperature",
+              "value": "={{ 0.8 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "GPT-4o - Text Processing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-480, -816],
+      "id": "6b7173bb-ec9c-403e-a94c-f0302c08019e",
+      "credentials": {
+        "openAiApi": {
+          "id": "0vzvK9daUvscWSUn",
+          "name": "myOpenAICredential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/conversation/save",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"user_message\": \"{{ $json.user_message }}\",\n  \"aimo_response\": \"{{ $node['GPT-4o - Text Processing'].json.choices[0].message.content }}\",\n  \"session_id\": \"{{ $json.session_id || 'default_session' }}\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-256, -816],
+      "id": "f1d46708-c5af-4cf0-899a-780bd70fd81f",
+      "name": "Save Conversation",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "function detectLanguage(text) {\n  if (!text || typeof text !== 'string') {\n    return { code: 'en-US', voice: 'en-US-Neural2-D' };\n  }\n  \n  // בדיקה אם המשתמש מבקש לדבר עם AIKO (קול אישה)\n  const originalText = $node['Whisper - Speech to Text'].json.text || '';\n  const isAikoRequested = originalText.toLowerCase().includes('aiko') || originalText.toLowerCase().includes('אייקו');  \n  \n  // השפות שלך עם הקולות הטובים ביותר - Chirp3 HD בכל מקום שאפשר\n  const patterns = [\n    { \n      lang: 'hebrew', \n      pattern: /[\\u0590-\\u05FF]/, \n      info: { \n        code: 'he-IL', \n        voice: isAikoRequested ? 'he-IL-Wavenet-C' : 'he-IL-Wavenet-D'\n      } \n    },\n    { \n      lang: 'english', \n      pattern: /[a-zA-Z]/, \n      info: { \n        code: 'en-GB', \n        voice: isAikoRequested ? 'en-GB-Wavenet-A' : 'en-GB-Wavenet-D'\n      } \n    },\n    { \n      lang: 'japanese', \n      pattern: /[\\u3040-\\u309F\\u30A0-\\u30FF\\u4E00-\\u9FAF]/, \n      info: { \n        code: 'ja-JP', \n        voice: isAikoRequested ? 'ja-JP-Wavenet-A' : 'ja-JP-Wavenet-D'\n      } \n    },\n    { \n      lang: 'french', \n      pattern: /[àâäçèéêëîïôùûüÿÀÂÄÇÈÉÊËÎÏÔÙÛÜŸ]/, \n      info: { \n        code: 'fr-FR', \n        voice: isAikoRequested ? 'fr-FR-Wavenet-A' : 'fr-FR-Wavenet-D'\n      } \n    },\n    { \n      lang: 'spanish', \n      pattern: /[ñÑáéíóúÁÉÍÓÚ]/, \n      info: { \n        code: 'es-ES', \n        voice: isAikoRequested ? 'es-ES-Wavenet-C' : 'es-ES-Wavenet-B'\n      } \n    },\n    { \n      lang: 'russian', \n      pattern: /[\\u0400-\\u04FF]/, \n      info: { \n        code: 'ru-RU', \n        voice: isAikoRequested ? 'ru-RU-Wavenet-A' : 'ru-RU-Wavenet-B'\n      } \n    },\n    { lang: 'arabic', pattern: /[\\u0600-\\u06FF]/, info: { code: 'ar-XA', voice: 'ar-XA-Wavenet-A' } },\n    { lang: 'italian', pattern: /[ÀÈÉÌÒÓÙàèéìòóù]/, info: { code: 'it-IT', voice: 'it-IT-Wavenet-A' } },\n    { lang: 'portuguese', pattern: /[ÃÁÀÂÇÉÊÍÓÔÕÚÜãáàâçéêíóôõúü]/, info: { code: 'pt-BR', voice: 'pt-BR-Wavenet-A' } },\n    { lang: 'german', pattern: /[ÄÖÜäöüß]/, info: { code: 'de-DE', voice: 'de-DE-Wavenet-A' } },\n    { lang: 'chinese', pattern: /[\\u4E00-\\u9FFF\\u3400-\\u4DBF]/, info: { code: 'cmn-CN', voice: 'cmn-CN-Wavenet-A' } },\n    { lang: 'thai', pattern: /[\\u0E00-\\u0E7F]/, info: { code: 'th-TH', voice: 'th-TH-Standard-A' } },\n    { lang: 'hindi', pattern: /[\\u0900-\\u097F]/, info: { code: 'hi-IN', voice: 'hi-IN-Wavenet-A' } },\n    { lang: 'korean', pattern: /[\\uAC00-\\uD7AF\\u1100-\\u11FF]/, info: { code: 'ko-KR', voice: 'ko-KR-Wavenet-A' } },\n    { lang: 'turkish', pattern: /[çğıöşü]/, info: { code: 'tr-TR', voice: 'tr-TR-Wavenet-A' } },\n    { lang: 'filipino', pattern: /[ñ]/, info: { code: 'fil-PH', voice: 'fil-ph-Neural2-A' } },\n    { lang: 'greek', pattern: /[\\u0370-\\u03FF\\u1F00-\\u1FFF]/, info: { code: 'el-GR', voice: 'el-GR-Wavenet-A' } }\n  ];\n  \n  for (const { pattern, info } of patterns) {\n    if (pattern.test(text)) {\n      return info;\n    }\n  }\n  return { code: 'en-US', voice: isAikoRequested ? 'en-US-Wavenet-C' : 'en-US-Wavenet-D' };\n}\n\ntry {\n  const gptResponse = $node['GPT-4o - Text Processing'].json;\n  const whisperResponse = $node['Whisper - Speech to Text'].json;\n  \n  // בדיקות מפורטות יותר\n  if (!gptResponse) {\n    console.error('No GPT response received');\n    throw new Error('No GPT response received');\n  }\n  \n  if (!gptResponse.choices || !Array.isArray(gptResponse.choices) || gptResponse.choices.length === 0) {\n    console.error('GPT response structure:', JSON.stringify(gptResponse));\n    throw new Error('Invalid GPT response structure - no choices array');\n  }\n  \n  if (!gptResponse.choices[0].message || !gptResponse.choices[0].message.content) {\n    console.error('GPT choice structure:', JSON.stringify(gptResponse.choices[0]));\n    throw new Error('Invalid GPT response structure - no message content');\n  }\n  \n  if (!whisperResponse || !whisperResponse.text) {\n    console.error('No Whisper response or text');\n    throw new Error('Invalid Whisper response structure');\n  }\n  \n  const responseText = gptResponse.choices[0].message.content;\n  const originalText = whisperResponse.text;\n  \n  const languageInfo = detectLanguage(responseText);\n  \n  return {\n    json: {\n      text: responseText,\n      originalText: originalText,\n      languageCode: languageInfo.code,\n      voiceName: languageInfo.voice,\n      detectedLanguage: languageInfo.code.split('-')[0]\n    }\n  };\n} catch (error) {\n  console.error('Error in language detection:', error.message);\n  console.error('Full error:', error);\n  \n  // החזר תשובת ברירת מחדל במקרה של שגיאה\n  return {\n    json: {\n      success: false,\n      error: error.message,\n      text: \"I'm sorry, I encountered an error processing your request. Please try again.\",\n      originalText: \"\",\n      languageCode: \"en-US\",\n      voiceName: \"en-US-Wavenet-D\",\n      detectedLanguage: \"en\"\n    }\n  };\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-32, -816],
+      "name": "Language Detection and Voice Selection",
+      "id": "0ef39afd-418e-4f1b-810e-cc342aa36a9c",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://texttospeech.googleapis.com/v1/text:synthesize",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "input",
+              "value": "={{ { \"text\": $json.text } }}"
+            },
+            {
+              "name": "voice",
+              "value": "={{ { \"languageCode\": $json.languageCode, \"name\": $json.voiceName } }}"
+            },
+            {
+              "name": "audioConfig",
+              "value": "={{ { \"audioEncoding\": \"MP3\" } }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Google Text-to-Speech",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [192, -816],
+      "id": "51ad88a9-63ba-47e1-b130-d54e8ac6838e",
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "q7INRvS18Kv8Ao2J",
+          "name": "Google account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\n  const languageNode = $node['Language Detection and Voice Selection'].json;\n  const ttsResponse = $json;\n  \n  if (languageNode.success === false) {\n    // במקרה של שגיאה, החזר טקסט בלבד\n    return { \n      json: {\n        success: true,\n        text: languageNode.text || \"Error processing request\",\n        originalText: languageNode.originalText || \"\",\n        audioBase64: \"\",\n        mimeType: 'audio/mp3',\n        languageCode: languageNode.languageCode || \"en-US\",\n        voiceName: languageNode.voiceName || \"en-US-Wavenet-D\",\n        detectedLanguage: languageNode.detectedLanguage || \"en\",\n        timestamp: new Date().toISOString()\n      }\n    };\n  }\n\n  if (!languageNode || !languageNode.text) {\n    throw new Error('Missing text from language detection node');\n  }\n  \n  if (!ttsResponse || !ttsResponse.audioContent) {\n    // אם אין אודיו, החזר רק טקסט\n    console.log('No audio content from TTS');\n    return {\n      json: {\n        success: true,\n        text: languageNode.text,\n        originalText: languageNode.originalText,\n        audioBase64: \"\",\n        mimeType: 'audio/mp3',\n        languageCode: languageNode.languageCode,\n        voiceName: languageNode.voiceName,\n        detectedLanguage: languageNode.detectedLanguage,\n        timestamp: new Date().toISOString()\n      }\n    };\n  }\n  \n  return {\n    json: {\n      success: true,\n      text: languageNode.text,\n      originalText: languageNode.originalText,\n      audioBase64: ttsResponse.audioContent,\n      mimeType: 'audio/mp3',\n      languageCode: languageNode.languageCode,\n      voiceName: languageNode.voiceName,\n      detectedLanguage: languageNode.detectedLanguage,\n      timestamp: new Date().toISOString()\n    }\n  };\n} catch (error) {\n  console.error('Error combining text and audio:', error);\n  return {\n    json: {\n      success: false,\n      error: error.message,\n      text: \"Error processing your request\",\n      originalText: \"\",\n      timestamp: new Date().toISOString()\n    }\n  };\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [416, -816],
+      "name": "Combine Text and Audio",
+      "id": "7b879c38-d621-4bd4-be37-4cc01b08749b",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, GET, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "name": "Final Combined Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [640, -816],
+      "id": "418b5115-bc46-4b1c-b710-3e5b9ebfbeaf",
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Webhook - קלט קול": {
+      "main": [
+        [
+          {
+            "node": "Fix Session ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fix Session ID": {
+      "main": [
+        [
+          {
+            "node": "Whisper - Speech to Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper - Speech to Text": {
+      "main": [
+        [
+          {
+            "node": "Get Session Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Session Memory": {
+      "main": [
+        [
+          {
+            "node": "Build Context with Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Context with Memory": {
+      "main": [
+        [
+          {
+            "node": "GPT-4o - Text Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT-4o - Text Processing": {
+      "main": [
+        [
+          {
+            "node": "Save Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Conversation": {
+      "main": [
+        [
+          {
+            "node": "Language Detection and Voice Selection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Language Detection and Voice Selection": {
+      "main": [
+        [
+          {
+            "node": "Google Text-to-Speech",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Text-to-Speech": {
+      "main": [
+        [
+          {
+            "node": "Combine Text and Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Text and Audio": {
+      "main": [
+        [
+          {
+            "node": "Final Combined Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
